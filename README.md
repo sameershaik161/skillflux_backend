@@ -166,6 +166,100 @@ backend/
 └── package.json         # Dependencies
 ```
 
+## Deployment to Vercel
+
+This backend is configured for deployment on Vercel's serverless platform.
+
+### Prerequisites
+1. Create a [Vercel account](https://vercel.com)
+2. Install Vercel CLI (optional): `npm i -g vercel`
+3. Have your MongoDB Atlas connection string ready
+
+### Deploy Steps
+
+#### Option 1: Deploy via Vercel Dashboard
+1. Push your code to GitHub
+2. Go to [Vercel Dashboard](https://vercel.com/dashboard)
+3. Click "New Project"
+4. Import your backend repository
+5. Configure environment variables:
+   - `MONGO_URI` - Your MongoDB connection string
+   - `JWT_SECRET` - Your JWT secret for students
+   - `ADMIN_JWT_SECRET` - Your JWT secret for admins
+   - `GEMINI_API_KEY` - Your Google Gemini API key
+   - `FRONTEND_URL` - Your frontend URL (e.g., https://yourapp.vercel.app)
+   - `NODE_ENV` - Set to `production`
+6. Click "Deploy"
+
+#### Option 2: Deploy via CLI
+```bash
+# Login to Vercel
+vercel login
+
+# Deploy
+vercel
+
+# Add environment variables
+vercel env add MONGO_URI
+vercel env add JWT_SECRET
+vercel env add ADMIN_JWT_SECRET
+vercel env add GEMINI_API_KEY
+vercel env add FRONTEND_URL
+
+# Deploy to production
+vercel --prod
+```
+
+### Important Notes for Vercel Deployment
+
+⚠️ **File Uploads**: 
+- Uploaded files in Vercel are stored in `/tmp` directory (temporary)
+- Files are NOT persistent across serverless function invocations
+- **Recommendation**: Use cloud storage (Cloudinary, AWS S3, etc.) for production
+- Current setup works for testing but files will be lost after function timeout
+
+⚠️ **MongoDB Connection**:
+- Use MongoDB Atlas (cloud database) - local MongoDB won't work on Vercel
+- Whitelist Vercel's IP addresses or use `0.0.0.0/0` (allow all)
+
+⚠️ **Environment Variables**:
+- Set all required environment variables in Vercel dashboard
+- Never commit `.env` file to Git
+
+### After Deployment
+
+1. Get your deployment URL (e.g., `https://your-backend.vercel.app`)
+2. Update your frontend's API base URL to point to this URL
+3. Test all API endpoints
+4. Monitor function logs in Vercel dashboard
+
+### Local Development
+
+The code automatically detects the environment:
+- **Local**: Uses `./uploads` directory
+- **Vercel**: Uses `/tmp/uploads` directory
+
+To run locally:
+```bash
+npm run dev
+```
+
+## Upgrading to Cloud Storage (Recommended for Production)
+
+For production use, replace local file storage with cloud storage:
+
+1. **Cloudinary** (Recommended):
+   ```bash
+   npm install cloudinary multer-storage-cloudinary
+   ```
+
+2. **AWS S3**:
+   ```bash
+   npm install aws-sdk multer-s3
+   ```
+
+See `src/middlewares/multerS3Upload.js` for implementation.
+
 ## Contributing
 
 1. Fork the repository

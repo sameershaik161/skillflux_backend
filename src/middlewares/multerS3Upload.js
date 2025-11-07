@@ -6,13 +6,18 @@ import fs from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Use /tmp directory for Vercel serverless environment
+// In production (Vercel), use /tmp which is writable
+// In development, use local uploads directory
+const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL;
+const uploadsDir = isProduction ? '/tmp/uploads' : path.join(__dirname, "../../uploads");
+
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, "../../uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Use disk storage instead of S3
+// Use disk storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);

@@ -3,6 +3,9 @@ node_modules/
 .pnp/
 .pnp.js
 
+# Important: DO NOT ignore the api/ folder - it's needed for Vercel deployment
+# !api/
+
 # Environment variables (IMPORTANT: Never commit .env files)
 .env
 .env.local

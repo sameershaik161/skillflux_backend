@@ -26,7 +26,11 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(morgan("dev"));
 
 // Serve uploaded files statically
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+// In production (Vercel), serve from /tmp/uploads
+// In development, serve from local uploads directory
+const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL;
+const uploadsPath = isProduction ? '/tmp/uploads' : path.join(__dirname, "../uploads");
+app.use("/uploads", express.static(uploadsPath));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/achievements", achievementRoutes);
