@@ -1,5 +1,5 @@
 import express from "express";
-import { adminLogin, listAchievements, verifyAchievement, toggleHighlight, adminDeleteAchievement, manualAdjustPoints, analytics, analyzeCertificate, getDashboardStats, getAllStudents, getStudentById } from "../controllers/admin.controller.js";
+import { adminLogin, listAchievements, verifyAchievement, toggleHighlight, adminDeleteAchievement, manualAdjustPoints, analytics, analyzeCertificate, getDashboardStats, getAllStudents, getStudentById, testEmail } from "../controllers/admin.controller.js";
 import authAdmin from "../middlewares/authAdmin.js";
 
 const router = express.Router();
@@ -20,6 +20,7 @@ router.get("/dashboard-stats", getDashboardStats);
 router.get("/students", getAllStudents);
 router.get("/students/:studentId", getStudentById);
 router.post("/analyze-certificate", analyzeCertificate);
+router.post("/test-email", testEmail);
 router.get("/test-ai", (req, res) => {
   res.json({ message: "AI endpoint is working!", timestamp: new Date() });
 });

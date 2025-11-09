@@ -1,4 +1,6 @@
 import Announcement from "../models/Announcement.js";
+import User from "../models/User.js";
+import { sendAnnouncementEmail } from "../services/emailService.js";
 
 // Admin: Create announcement
 export async function createAnnouncement(req, res) {
@@ -8,9 +10,58 @@ export async function createAnnouncement(req, res) {
       postedBy: req.admin._id
     });
     
+    // Send email notifications
+    console.log('📢 New announcement created:', announcement.title);
+    console.log('📧 Sending email notifications...');
+    
+    try {
+      // Get admin email for notification
+      const adminEmail = process.env.EMAIL_USER;
+      const adminName = req.admin.username || 'Admin';
+      
+      // Send notification to admin (you)
+      if (adminEmail) {
+        const adminEmailResult = await sendAnnouncementEmail(
+          adminEmail,
+          'Admin',
+          announcement,
+          adminName
+        );
+        console.log('📧 Admin notification:', adminEmailResult.success ? 'Sent' : 'Failed');
+      }
+      
+      // Optionally, send to all active students
+      if (req.body.sendToAllStudents) {
+        const students = await User.find({ isActive: true }).select('email name');
+        console.log(`📧 Sending to ${students.length} students...`);
+        
+        // Send emails in batches to avoid overload
+        const emailPromises = students.map(student => 
+          sendAnnouncementEmail(
+            student.email,
+            student.name,
+            announcement,
+            adminName
+          ).catch(err => {
+            console.error(`Failed to send to ${student.email}:`, err.message);
+            return { success: false };
+          })
+        );
+        
+        const results = await Promise.all(emailPromises);
+        const successCount = results.filter(r => r.success).length;
+        console.log(`📧 Emails sent: ${successCount}/${students.length}`);
+      }
+      
+    } catch (emailError) {
+      console.error('❌ Email notification error:', emailError.message);
+      // Don't fail the announcement creation if email fails
+    }
+    
     res.status(201).json({ 
       message: "Announcement created successfully", 
-      announcement 
+      announcement,
+      emailSent: true
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

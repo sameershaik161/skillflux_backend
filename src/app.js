@@ -10,6 +10,7 @@ import achievementRoutes from "./routes/achievement.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import erpRoutes from "./routes/erp.routes.js";
 import announcementRoutes from "./routes/announcement.routes.js";
+import activityRoutes from "./routes/activity.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ app.use("/api/achievements", achievementRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/erp", erpRoutes);
 app.use("/api/announcements", announcementRoutes);
+app.use("/api/activities", activityRoutes);
 
 app.get("/", (req, res) => res.json({ ok: true }));
 

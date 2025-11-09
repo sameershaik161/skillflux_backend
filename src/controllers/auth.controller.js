@@ -73,9 +73,84 @@ export async function login(req, res) {
 
 export async function me(req, res) {
   try {
-    const user = await User.findById(req.user._id).populate("achievements");
-    res.json(user);
+    const user = await User.findById(req.userId).select("-passwordHash");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    
+    // Calculate user's rank
+    const rank = await User.countDocuments({ totalPoints: { $gt: user.totalPoints } }) + 1;
+    
+    res.json({ ...user.toObject(), rank });
   } catch (err) {
+    console.error("Me route error:", err);
+    res.status(500).json({ message: err.message });
+  }
+}
+
+export async function getLeaderboard(req, res) {
+  try {
+    const { year, department } = req.query;
+    
+    // Build filter query
+    const filter = {};
+    if (year) filter.year = year;
+    if (department) filter.department = department;
+    
+    // Get filtered students sorted by points
+    const leaderboard = await User.find(filter)
+      .select("name rollNumber department section year totalPoints profilePicUrl")
+      .sort({ totalPoints: -1, name: 1 })
+      .limit(100); // Top 100 students
+    
+    // Add rank to each student and ensure totalPoints defaults to 0
+    const leaderboardWithRank = leaderboard.map((student, index) => ({
+      ...student.toObject(),
+      totalPoints: student.totalPoints || 0,
+      rank: index + 1
+    }));
+    
+    res.json(leaderboardWithRank);
+  } catch (err) {
+    console.error("Leaderboard error:", err);
+    res.status(500).json({ message: err.message });
+  }
+}
+
+export async function getMyRank(req, res) {
+  try {
+    const { year, department } = req.query;
+    const user = await User.findById(req.userId).select("name rollNumber totalPoints year department");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    
+    const userPoints = user.totalPoints || 0;
+    
+    // Build filter query for rank calculation
+    const filter = { totalPoints: { $gt: userPoints } };
+    if (year) filter.year = year;
+    if (department) filter.department = department;
+    
+    // Calculate rank - count how many students have MORE points in the filtered set
+    const rank = await User.countDocuments(filter) + 1;
+    
+    // Count total students in filtered set
+    const countFilter = {};
+    if (year) countFilter.year = year;
+    if (department) countFilter.department = department;
+    const totalStudents = await User.countDocuments(countFilter);
+    
+    const percentile = totalStudents > 0 ? Math.round(((totalStudents - rank + 1) / totalStudents) * 100) : 0;
+    
+    res.json({
+      rank,
+      totalStudents,
+      percentile,
+      totalPoints: userPoints,
+      name: user.name,
+      rollNumber: user.rollNumber,
+      year: user.year,
+      department: user.department
+    });
+  } catch (err) {
+    console.error("Rank calculation error:", err);
     res.status(500).json({ message: err.message });
   }
 }
@@ -88,6 +163,19 @@ export async function uploadProfilePic(req, res) {
     req.user.profilePicUrl = fileUrl;
     await req.user.save();
     res.json({ message: "Profile picture uploaded", url: fileUrl, user: req.user });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+}
+
+export async function uploadBanner(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file" });
+    // Store the file path relative to server
+    const fileUrl = `/uploads/${req.file.filename}`;
+    req.user.bannerUrl = fileUrl;
+    await req.user.save();
+    res.json({ message: "Banner uploaded", url: fileUrl, user: req.user });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

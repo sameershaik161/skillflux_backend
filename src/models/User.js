@@ -32,6 +32,7 @@ const userSchema = new mongoose.Schema({
   },
   year: { type: String, enum: ["I","II","III","IV"], required: true },
   profilePicUrl: { type: String, default: "" },
+  bannerUrl: { type: String, default: "" },
   resumeUrl: { type: String, default: "" },
   socialLinks: socialSchema,
   totalPoints: { type: Number, default: 0 },

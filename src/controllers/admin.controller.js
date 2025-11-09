@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import Achievement from "../models/Achievement.js";
 import User from "../models/User.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { sendApprovalEmail, sendRejectionEmail } from "../services/emailService.js";
 
 export async function adminLogin(req, res) {
   try {
@@ -22,11 +23,24 @@ export async function adminLogin(req, res) {
 
 export async function listAchievements(req, res) {
   try {
-    const { status, category } = req.query;
+    const { status, category, year } = req.query;
     const q = {};
     if (status) q.status = status;
     if (category) q.category = category;
-    const items = await Achievement.find(q).populate("student", "name rollNumber section totalPoints").sort({ createdAt: -1 });
+    
+    let items;
+    if (year) {
+      // If year filter is applied, first get students of that year
+      const studentIds = await User.find({ year: year })
+        .select('_id');
+      
+      q.student = { $in: studentIds.map(s => s._id) };
+    }
+    
+    items = await Achievement.find(q)
+      .populate("student", "name rollNumber section totalPoints year")
+      .sort({ createdAt: -1 });
+      
     res.json(items);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -37,7 +51,7 @@ export async function verifyAchievement(req, res) {
   try {
     const { id } = req.params;
     const { action, points = 0, adminNote = "" } = req.body;
-    const ach = await Achievement.findById(id);
+    const ach = await Achievement.findById(id).populate('student', 'name email');
     if (!ach) return res.status(404).json({ message: "Not found" });
 
     if (action === "approve") {
@@ -47,10 +61,22 @@ export async function verifyAchievement(req, res) {
         ach.adminNote = adminNote;
         await ach.save();
         // increment user points
-        const user = await User.findById(ach.student);
+        const user = await User.findById(ach.student._id);
         user.totalPoints = (user.totalPoints || 0) + Number(points || 0);
         await user.save();
-        return res.json({ message: "Approved", achievement: ach, totalPoints: user.totalPoints });
+        
+        // Send approval email
+        console.log('📧 Attempting to send approval email to:', ach.student.email);
+        const emailResult = await sendApprovalEmail(
+          ach.student.email,
+          ach.student.name,
+          ach.title,
+          Number(points || 0),
+          adminNote
+        );
+        console.log('📧 Email result:', emailResult);
+        
+        return res.json({ message: "Approved", achievement: ach, totalPoints: user.totalPoints, emailSent: emailResult.success });
       } else {
         return res.status(400).json({ message: "Already approved" });
       }
@@ -58,7 +84,18 @@ export async function verifyAchievement(req, res) {
       ach.status = "rejected";
       ach.adminNote = adminNote;
       await ach.save();
-      return res.json({ message: "Rejected", achievement: ach });
+      
+      // Send rejection email
+      console.log('📧 Attempting to send rejection email to:', ach.student.email);
+      const emailResult = await sendRejectionEmail(
+        ach.student.email,
+        ach.student.name,
+        ach.title,
+        adminNote
+      );
+      console.log('📧 Email result:', emailResult);
+      
+      return res.json({ message: "Rejected", achievement: ach, emailSent: emailResult.success });
     } else {
       return res.status(400).json({ message: "Invalid action" });
     }
@@ -107,11 +144,29 @@ export async function manualAdjustPoints(req, res) {
 
 export async function analytics(req, res) {
   try {
-    const top = await User.find().sort({ totalPoints: -1 }).limit(10).select("name rollNumber section totalPoints");
+    // Get all students sorted by points for ranking
+    const allStudents = await User.find()
+      .sort({ totalPoints: -1 })
+      .select("name rollNumber section totalPoints year");
+
+    // Add rank to each student
+    const rankedStudents = allStudents.map((student, index) => ({
+      ...student.toObject(),
+      rank: index + 1
+    }));
+
+    // Get top 10 students
+    const top = rankedStudents.slice(0, 10);
+
     const pending = await Achievement.countDocuments({ status: "pending" });
     const approved = await Achievement.countDocuments({ status: "approved" });
     const rejected = await Achievement.countDocuments({ status: "rejected" });
-    res.json({ topStudents: top, counts: { pending, approved, rejected } });
+
+    res.json({ 
+      topStudents: top, 
+      counts: { pending, approved, rejected },
+      totalStudents: allStudents.length
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -123,14 +178,24 @@ export async function getAllStudents(req, res) {
     console.log("📋 getAllStudents endpoint hit!");
     console.log("Admin:", req.admin?.username);
     
-    const students = await User.find()
+    const { year } = req.query;
+    const query = {};
+    if (year) query.year = year;
+    
+    const students = await User.find(query)
       .select("name email rollNumber department section year totalPoints profilePicUrl achievements")
       .populate("achievements")
-      .sort({ department: 1, section: 1, rollNumber: 1 });
+      .sort({ totalPoints: -1, department: 1, section: 1, rollNumber: 1 });
     
-    console.log(`✅ Found ${students.length} students`);
+    // Add rank to each student
+    const rankedStudents = students.map((student, index) => ({
+      ...student.toObject(),
+      rank: index + 1
+    }));
     
-    res.json({ students, total: students.length });
+    console.log(`✅ Found ${rankedStudents.length} students`);
+    
+    res.json({ students: rankedStudents, total: rankedStudents.length });
   } catch (err) {
     console.error("❌ Get all students error:", err);
     res.status(500).json({ message: err.message });
@@ -459,4 +524,66 @@ function generateCertificateAnalysis(title = "", description = "", category = ""
     assessment_level: credibilityScore >= 80 ? 'Excellent' : credibilityScore >= 60 ? 'Good' : credibilityScore >= 40 ? 'Fair' : 'Needs Review',
     ai_confidence: credibilityScore >= 70 ? 'High' : credibilityScore >= 50 ? 'Medium' : 'Low'
   };
+}
+
+// Test email configuration endpoint
+export async function testEmail(req, res) {
+  try {
+    const { testEmail } = req.body;
+    
+    // Check if email credentials are configured
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email credentials not configured in .env file',
+        configured: {
+          EMAIL_USER: !!process.env.EMAIL_USER,
+          EMAIL_PASSWORD: !!process.env.EMAIL_PASSWORD
+        }
+      });
+    }
+    
+    console.log('🧪 Testing email configuration...');
+    console.log('📧 EMAIL_USER:', process.env.EMAIL_USER);
+    console.log('🔑 EMAIL_PASSWORD configured:', !!process.env.EMAIL_PASSWORD);
+    console.log('📬 Sending test email to:', testEmail || process.env.EMAIL_USER);
+    
+    // Send test email
+    const result = await sendApprovalEmail(
+      testEmail || process.env.EMAIL_USER,
+      'Test User',
+      'Test Achievement - Email Configuration Check',
+      100,
+      'This is a test email to verify your email configuration is working correctly.'
+    );
+    
+    console.log('✅ Test email result:', result);
+    
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'Test email sent successfully! Check your inbox (and spam folder).',
+        emailSent: true,
+        sentTo: testEmail || process.env.EMAIL_USER,
+        messageId: result.messageId
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send test email',
+        error: result.error || result.message,
+        configured: {
+          EMAIL_USER: process.env.EMAIL_USER,
+          EMAIL_PASSWORD: '***configured***'
+        }
+      });
+    }
+  } catch (err) {
+    console.error('❌ Test email error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Error testing email',
+      error: err.message
+    });
+  }
 }
